@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { SessionManager, type AgentSession } from "@earendil-works/pi-coding-agent";
-import { generateSessionTitle } from "@/lib/session-title";
-import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import type { GeneratedSessionTitle } from "@/lib/session-title";
+import { getRpcSession, startRpcSession } from "@/lib/agent-process-manager";
 import { invalidateSessionListCache, resolveSessionPath } from "@/lib/session-reader";
 
 export async function POST(
@@ -22,10 +22,9 @@ export async function POST(
       ? { session: existing }
       : await startRpcSession(id, filePath, cwd);
 
-    // globalThis keeps wrappers alive across dev hot reloads; older instances
-    // may predate waitUntilReady(), but those have already completed startup.
-    await session.waitUntilReady?.();
-    const result = await generateSessionTitle(session.inner as unknown as AgentSession);
+    const result = await session.send({
+      type: "generate_session_title",
+    }) as GeneratedSessionTitle;
 
     if (!session.isAlive()) {
       return NextResponse.json(
@@ -34,7 +33,6 @@ export async function POST(
       );
     }
 
-    session.inner.setSessionName(result.title);
     invalidateSessionListCache();
     return NextResponse.json({ title: result.title, usage: result.usage ?? null });
   } catch (error) {

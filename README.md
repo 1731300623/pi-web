@@ -132,9 +132,12 @@ components/
   FileExplorer.tsx    # file tree
   FileViewer.tsx      # source, diff, image, audio, PDF, DOCX preview
 lib/
+  agent-process-manager.ts # child-process registry and IPC AgentSession proxy
+  agent-worker.ts        # worker-side command/event bridge
+  agent-worker-protocol.ts # typed parent/worker IPC messages
   directory-browser.ts # directory normalization and safe listing helpers
   http-dispatcher.ts  # HTTP(S) proxy setup for server-side fetch
-  rpc-manager.ts      # AgentSessionWrapper lifecycle and global registry
+  rpc-manager.ts      # worker-side AgentSessionWrapper and SDK session lifecycle
   session-reader.ts   # parses .jsonl session files and branch contexts
   normalize.ts        # normalizes toolCall field names
   file-access.ts      # file read safety boundary
@@ -148,5 +151,7 @@ hooks/
   useTheme.ts         # theme switching
 bin/
   pi-web.js           # npm CLI entrypoint
+scripts/
+  agent-worker.mjs    # Jiti bootstrap for one-session worker processes
 instrumentation.ts    # initializes the server HTTP dispatcher
 ```

@@ -7,10 +7,11 @@ import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
-import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
+import { generateSessionTitle } from "./session-title";
 
 // ============================================================================
 // Types
@@ -116,13 +117,15 @@ export class AgentSessionWrapper {
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
+  private auxiliaryOperationRunning = false;
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
   private forceEmptySystemPrompt = false;
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private onDestroyCallback: (() => void) | null = null;
+  private onDestroyCallbacks = new Set<() => void>();
+  private shutdownPromise: Promise<void> | null = null;
   private _alive = true;
 
   constructor(public readonly inner: AgentSessionLike) {}
@@ -144,7 +147,13 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return this._alive && (
+      this.promptRunning
+      || this.auxiliaryOperationRunning
+      || this.inner.isStreaming
+      || this.inner.isCompacting
+      || this.inner.isBashRunning
+    );
   }
 
   start(): void {
@@ -243,7 +252,11 @@ export class AgentSessionWrapper {
   }
 
   private shouldWaitForExtensions(type: string): boolean {
-    return type === "prompt" || type === "steer" || type === "follow_up" || type === "get_commands";
+    return type === "prompt"
+      || type === "steer"
+      || type === "follow_up"
+      || type === "get_commands"
+      || type === "generate_session_title";
   }
 
   private async withFinalRunningNotification<T>(operation: () => Promise<T>): Promise<T> {
@@ -271,12 +284,11 @@ export class AgentSessionWrapper {
         this.resetIdleTimer();
         return;
       }
-      this.destroy();
+      void this.shutdown();
     }, 10 * 60 * 1000);
   }
 
-  private persistBashOnlySession(): void {
-    const manager = this.inner.sessionManager;
+  private persistSessionManagerFile(manager: SessionManager): void {
     const sessionFile = manager.getSessionFile();
     if (!sessionFile || existsSync(sessionFile)) return;
 
@@ -289,10 +301,14 @@ export class AgentSessionWrapper {
     writeFileSync(sessionFile, content, { encoding: "utf8", flag: "wx" });
 
     // Pi normally delays the first flush until an assistant message exists.
-    // A leading shell command has no assistant message, so mark this SDK
-    // manager as flushed after writing its own generated entries.
+    // Once the host needs a durable path (for a bash-only session or fork),
+    // mark this SDK manager as flushed after writing its generated entries.
     (manager as unknown as { flushed: boolean }).flushed = true;
-    cacheSessionPath(this.inner.sessionId, sessionFile);
+    cacheSessionPath(manager.getSessionId(), sessionFile);
+  }
+
+  private persistBashOnlySession(): void {
+    this.persistSessionManagerFile(this.inner.sessionManager);
   }
 
   onEvent(listener: EventListener): () => void {
@@ -305,7 +321,7 @@ export class AgentSessionWrapper {
   }
 
   onDestroy(cb: () => void): void {
-    this.onDestroyCallback = cb;
+    this.onDestroyCallbacks.add(cb);
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
@@ -412,24 +428,30 @@ export class AgentSessionWrapper {
 
         const sessionDir = sessionManager.getSessionDir();
         let newSessionFile: string;
+        let forkedManager: SessionManager;
 
         if (!entry.parentId) {
           // Fork before the first message: create an empty session linked to this one
           const newManager = SessionManager.create(sessionManager.getCwd(), sessionDir);
           newManager.newSession({ parentSession: currentSessionFile });
           newSessionFile = newManager.getSessionFile() as string;
+          forkedManager = newManager;
         } else {
           // Fork after some history: copy path up to (but not including) the fork point
           const sourceManager = SessionManager.open(currentSessionFile, sessionDir);
           const forkedPath = sourceManager.createBranchedSession(entry.parentId);
           if (!forkedPath) throw new Error("Failed to create forked session");
           newSessionFile = forkedPath;
+          forkedManager = sourceManager;
         }
 
-        const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
+        // Pi defers writing sessions with no assistant message. This worker exits
+        // after fork, so persist the snapshot now or the new id becomes unresolvable.
+        this.persistSessionManagerFile(forkedManager);
+        const newSessionId = forkedManager.getSessionId();
         cacheSessionPath(newSessionId, newSessionFile);
         invalidateSessionListCache();
-        this.destroy();
+        await this.shutdown();
         return { cancelled: false, newSessionId };
       }
 
@@ -481,6 +503,21 @@ export class AgentSessionWrapper {
 
       case "get_last_assistant_text": {
         return { text: this.inner.getLastAssistantText() ?? "" };
+      }
+
+      case "generate_session_title": {
+        this.auxiliaryOperationRunning = true;
+        notifyRunningChange();
+        try {
+          const result = await generateSessionTitle(this.inner as unknown as AgentSession);
+          if (!this._alive) throw new Error("The session was closed while its title was being generated");
+          this.inner.setSessionName(result.title);
+          invalidateSessionListCache();
+          return result;
+        } finally {
+          this.auxiliaryOperationRunning = false;
+          notifyRunningChange();
+        }
       }
 
       case "set_auto_compaction": {
@@ -627,8 +664,26 @@ export class AgentSessionWrapper {
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
-    this.onDestroyCallback?.();
+    this.inner.dispose?.();
+    for (const callback of this.onDestroyCallbacks) {
+      try { callback(); } catch { /* ignore cleanup listener errors */ }
+    }
+    this.onDestroyCallbacks.clear();
     notifyRunningChange();
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    if (!this._alive) return;
+
+    this.shutdownPromise = (async () => {
+      try {
+        await this.inner.extensionRunner.emit?.({ type: "session_shutdown", reason: "quit" });
+      } finally {
+        this.destroy();
+      }
+    })();
+    return this.shutdownPromise;
   }
 
   private resolveExtensionUiResponse(response: ExtensionUiResponse): void {
@@ -986,8 +1041,12 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
     globalThis.__piSessions = new Map();
     const cleanup = () => globalThis.__piSessions?.forEach((s) => s.destroy());
     process.once("exit", cleanup);
-    process.once("SIGINT", cleanup);
-    process.once("SIGTERM", cleanup);
+    // The dedicated worker owns async signal shutdown so extensions can finish
+    // their session_shutdown hooks before AgentSession.dispose() invalidates them.
+    if (process.env.PI_WEB_AGENT_WORKER !== "1") {
+      process.once("SIGINT", cleanup);
+      process.once("SIGTERM", cleanup);
+    }
   }
   return globalThis.__piSessions;
 }

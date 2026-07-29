@@ -1,5 +1,5 @@
 import { resolveSessionPath } from "@/lib/session-reader";
-import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
+import { getRpcSession, startRpcSession } from "@/lib/agent-process-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 export const dynamic = "force-dynamic";

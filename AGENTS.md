@@ -15,23 +15,22 @@ Lint: `npm run lint`
 ## Architecture
 
 ```
-Browser                Next.js Server              AgentSession (in-process)
-  │                        │                               │
-  ├─ GET /api/sessions ────▶ reads ~/.pi/agent/sessions/   │
-  ├─ GET /api/sessions/[id] reads .jsonl file directly     │
-  ├─ GET /api/agent/running/events ───▶ running id SSE     │
-  │                        │                               │
-  ├─ send message ─────────▶ POST /api/agent/[id]          │
-  │                        │   startRpcSession() ─────────▶│ createAgentSession()
-  │                        │   session.send(cmd) ─────────▶│ session.prompt()
-  │                        │                               │
-  ├─ SSE connect ──────────▶ GET /api/agent/[id]/events    │
-  │                        │   session.onEvent() ◀─────────│ session.subscribe()
-  │◀── data: {...} ─────────│                               │
+Browser             Next.js Server              Agent worker (one per active session)
+  │                      │                                  │
+  ├─ GET /api/sessions ──▶ reads ~/.pi/agent/sessions/      │
+  ├─ GET /api/sessions/[id] reads .jsonl directly           │
+  ├─ running-id SSE ◀─────┤                                  │
+  │                      │                                  │
+  ├─ POST agent command ─▶│ AgentProcessSession.send() ─IPC─▶ AgentSessionWrapper.send()
+  │                      │                                  │   └─ session.prompt()
+  │                      │                                  │
+  ├─ session SSE ◀────────│ AgentProcessSession.onEvent() ◀─┤ session.subscribe()
+  │                      │                                  │
 ```
 
-**Session browsing** (read-only): reads `.jsonl` files through SDK `SessionManager` helpers and `lib/session-reader.ts` — no AgentSession created.  
-**Sending a message**: `startRpcSession()` in `lib/rpc-manager.ts` creates an AgentSession in-process.
+**Session browsing** (read-only): reads `.jsonl` files through SDK `SessionManager` helpers and `lib/session-reader.ts`; it does not create a worker or an AgentSession.
+
+**Sending a command**: `startRpcSession()` in `lib/agent-process-manager.ts` creates one child Node process for that active session. `lib/agent-worker.ts` then creates exactly one in-process `AgentSessionWrapper` through `lib/rpc-manager.ts`.
 
 ---
 
@@ -68,6 +67,9 @@ app/api/
   worktrees/route.ts              GET/POST/DELETE git worktrees
 
 lib/
+  agent-process-manager.ts parent-process worker registry + IPC proxy
+  agent-worker-protocol.ts typed parent/worker IPC messages
+  agent-worker.ts       child-process command/event bridge
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers
   file-access.ts       allowed file roots for /api/files and worktrees
@@ -75,12 +77,15 @@ lib/
   markdown.ts          shared markdown helpers
   npx.ts               npx runner used by skill install
   pi-types.ts          local structural types for pi SDK objects
-  rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
+  rpc-manager.ts      worker-side AgentSessionWrapper + SDK session creation
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
   tool-presets.ts     PRESET_NONE/DEFAULT/FULL + getPresetFromTools()
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
   worktree.ts         project/worktree resolution and git worktree operations
+
+scripts/
+  agent-worker.mjs    Jiti bootstrap for the TypeScript worker runtime
 
 components/
   AppShell.tsx        layout + URL state + tab management
@@ -111,15 +116,16 @@ hooks/
 
 ## Key Design Decisions & Traps
 
-### AgentSession lifecycle (`lib/rpc-manager.ts`)
-- One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
-- `globalThis` survives Next.js hot-reload; plain module-level Map does not
-- Idle timeout: 10 minutes. Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
+### AgentSession process lifecycle
+- The Next.js process keeps one `AgentProcessSession` proxy per active session id in `globalThis.__piAgentProcesses`; `globalThis` preserves the registry across development hot reloads.
+- Each proxy owns one child Node process. Each child creates exactly one `AgentSessionWrapper` and one SDK `AgentSession`; extensions and their module-level state are therefore isolated by session.
+- Historical browsing remains file-only. A worker starts only when an agent command or session event stream needs a live runtime.
+- Parent-side concurrent starts share `globalThis.__piAgentProcessStartLocks`. Worker-side SDK construction still has its own lock as a defensive guard.
+- Idle timeout is 10 minutes. Graceful shutdown emits `session_shutdown`, disposes the SDK session, notifies the parent, and exits the worker. A crashed worker is removed from the parent registry so the next request can recreate it.
+- `pi-chrome` intentionally shares its fixed loopback bridge across processes: the first worker owns `127.0.0.1:17318`, later workers use client mode, and a client promotes itself if the owner exits.
 
 ### Fork must destroy the wrapper immediately
-`AgentSession.fork()` **mutates the wrapper's inner state in-place** — after fork, `inner.sessionId` is the *new* session's id. If the wrapper stays alive in the registry under the old id, the next request gets the already-forked state and subsequent forks produce a corrupt `parentSession` chain.
-
-**Fix**: `send("fork")` captures `newSessionId`, then calls `this.destroy()` before returning. The next request for the original session reloads a clean AgentSession from the original file.
+Fork creates a separate `.jsonl` file from the selected entry, then shuts down the current worker-side wrapper. The worker sends the fork result before its final `destroyed` notification and exits; the parent removes the old proxy. The next command for the original session therefore reloads a clean AgentSession from the original file instead of retaining mutated branch state.
 
 ### Two kinds of branching — don't confuse them
 - **Fork** (Fork button on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.
@@ -144,7 +150,7 @@ On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming ==
 Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `auto_compaction_start` / `auto_compaction_end`. `handleAgentEvent` accepts both sets to keep `isCompacting` in sync. Manual compact is a blocking POST — the button stays disabled until the response returns.
 
 ### Running state SSE + reconciliation
-- The sidebar listens to `/api/agent/running/events`, backed by `subscribeRunningSessions()` in `lib/rpc-manager.ts`, so running badges update without polling.
+- The sidebar listens to `/api/agent/running/events`, backed by `subscribeRunningSessions()` in `lib/agent-process-manager.ts`. Workers push running-state changes over IPC and the parent fans them out over SSE.
 - `useAgentSession` still treats per-session SSE as primary for chat events, but while a run is active it periodically calls `GET /api/agent/[id]` and also reconciles on `visibilitychange`/`online`. This fixes missed `agent_end` events from background tabs or half-open connections.
 - Prompt runs use a monotonic run id; late SSE or slow reconciliation responses from an old run must be ignored so they cannot resurrect stale streaming bubbles.
 
