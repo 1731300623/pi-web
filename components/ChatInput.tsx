@@ -66,6 +66,8 @@ interface Props {
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
   onAudioUnlock?: () => void;
+  /** Whether the pi-brainstorm extension's read-only brainstorm mode is currently active */
+  brainstormActive?: boolean;
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
@@ -318,7 +320,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
-  soundEnabled, onSoundToggle, onAudioUnlock,
+  soundEnabled, onSoundToggle, onAudioUnlock, brainstormActive,
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
@@ -335,6 +337,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
+  const [brainstormOpen, setBrainstormOpen] = useState(false);
+  const [brainstormTopic, setBrainstormTopic] = useState("");
   const trimmedValue = value.trimStart();
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
@@ -562,6 +566,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     onSend(msg, attachedImages.length ? attachedImages : undefined);
     clearInput();
   }, [value, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+
+  const startBrainstorm = useCallback(() => {
+    const topic = brainstormTopic.trim();
+    if (!topic || isStreaming) return;
+    // Triggers the pi-brainstorm extension: read-only mode, only the read
+    // tool stays enabled. Finish with /brainstorm finish, discard with cancel.
+    onSend(`/brainstorm ${topic}`);
+    setBrainstormTopic("");
+    setBrainstormOpen(false);
+  }, [brainstormTopic, isStreaming, onSend]);
+
+  const finishBrainstorm = useCallback(() => {
+    if (isStreaming) return;
+    // Ends brainstorm mode: generates a decision brief, lets the user review
+    // it in an editor, then offers to save it as markdown / replace context.
+    onSend("/brainstorm finish");
+    setBrainstormOpen(false);
+  }, [isStreaming, onSend]);
+
+  const cancelBrainstorm = useCallback(() => {
+    if (isStreaming) return;
+    onSend("/brainstorm cancel");
+    setBrainstormOpen(false);
+  }, [isStreaming, onSend]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1766,6 +1794,180 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
         )}
 
+        {/* Brainstorm panel */}
+        {brainstormOpen && (
+          <div
+            style={{
+              marginTop: 8,
+              border: "1px solid color-mix(in srgb, var(--accent) 38%, var(--border))",
+              borderRadius: 10,
+              background: "var(--bg-panel)",
+              padding: "10px 12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, minWidth: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
+                <line x1="7" y1="18" x2="12" y2="18" />
+                <line x1="8" y1="21" x2="11" y2="21" />
+              </svg>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>
+                {brainstormActive ? t("brainstorm.activeTitle") : t("brainstorm.title")}
+              </span>
+              <span style={{ fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {brainstormActive ? t("brainstorm.activeHint") : t("brainstorm.hint")}
+              </span>
+            </div>
+            {brainstormActive ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  onClick={finishBrainstorm}
+                  disabled={isStreaming}
+                  title={t("brainstorm.endTitle")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 12px",
+                    background: isStreaming ? "var(--bg-hover)" : "rgba(16,185,129,0.12)",
+                    border: "1px solid rgba(16,185,129,0.4)",
+                    borderRadius: 8,
+                    color: isStreaming ? "var(--text-dim)" : "rgba(5,150,105,1)",
+                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    fontSize: 12.5, fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s",
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  {t("brainstorm.endAndSummarize")}
+                </button>
+                <button
+                  onClick={cancelBrainstorm}
+                  disabled={isStreaming}
+                  title={t("brainstorm.discardTitle")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 12px",
+                    background: isStreaming ? "var(--bg-hover)" : "none",
+                    border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
+                    borderRadius: 8,
+                    color: isStreaming ? "var(--text-dim)" : "var(--text-muted)",
+                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    fontSize: 12.5, fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s",
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  {t("brainstorm.cancelAndDiscard")}
+                </button>
+                <span style={{ fontSize: 11, color: "var(--text-dim)", flex: 1, minWidth: 0 }}>
+                  {t("brainstorm.freeChatHint")}
+                </span>
+                <button
+                  onClick={() => setBrainstormOpen(false)}
+                  title={t("brainstorm.continue")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 12px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 8,
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 12.5, fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                >
+                  {t("brainstorm.continue")}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  autoFocus
+                  value={brainstormTopic}
+                  onChange={(e) => setBrainstormTopic(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      startBrainstorm();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setBrainstormOpen(false);
+                      setBrainstormTopic("");
+                    }
+                  }}
+                  placeholder={t("brainstorm.placeholder")}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "7px 10px",
+                    color: "var(--text)",
+                    fontSize: 13,
+                    outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <button
+                  onClick={startBrainstorm}
+                  disabled={!brainstormTopic.trim() || isStreaming}
+                  title={t("brainstorm.start")}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "7px 12px",
+                    background: brainstormTopic.trim() && !isStreaming ? "var(--accent)" : "var(--bg-hover)",
+                    border: "none",
+                    borderRadius: 8,
+                    color: brainstormTopic.trim() && !isStreaming ? "#fff" : "var(--text-dim)",
+                    cursor: brainstormTopic.trim() && !isStreaming ? "pointer" : "not-allowed",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s",
+                  }}
+                >
+                  {t("brainstorm.start")}
+                </button>
+                <button
+                  onClick={() => {
+                    setBrainstormOpen(false);
+                    setBrainstormTopic("");
+                  }}
+                  title={t("brainstorm.cancel")}
+                  aria-label={t("brainstorm.cancel")}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 32, height: 32, padding: 0,
+                    background: "none", border: "none", borderRadius: 8,
+                    color: "var(--text-muted)", cursor: "pointer",
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Bottom bar: left | center (context) | right */}
         <div style={{
           marginTop: 8,
@@ -1806,6 +2008,52 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
               </svg>
+            </button>
+            {/* Brainstorm toggle */}
+            <button
+              onClick={() => setBrainstormOpen((v) => !v)}
+              disabled={isStreaming}
+              title={brainstormActive
+                ? t("brainstorm.toggleActive")
+                : t("brainstorm.toggleHint")}
+              aria-label={t("brainstorm.title")}
+              aria-expanded={brainstormOpen}
+              style={{
+                flexShrink: 0,
+                display: "flex", alignItems: "center", gap: 5,
+                height: 32,
+                padding: isMobile ? "0 8px" : "0 10px",
+                background: brainstormActive || brainstormOpen
+                  ? "color-mix(in srgb, var(--accent) 14%, transparent)"
+                  : "none",
+                border: brainstormActive ? "1px solid color-mix(in srgb, var(--accent) 45%, transparent)" : "none",
+                borderRadius: 9,
+                color: brainstormActive || brainstormOpen ? "var(--accent)" : "var(--text-muted)",
+                cursor: isStreaming ? "not-allowed" : "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                opacity: isStreaming ? 0.5 : 1,
+                whiteSpace: "nowrap",
+                transition: "background 0.12s, color 0.12s, border-color 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                if (isStreaming) return;
+                e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 20%, transparent)";
+                e.currentTarget.style.color = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = brainstormActive || brainstormOpen
+                  ? "color-mix(in srgb, var(--accent) 14%, transparent)"
+                  : "none";
+                e.currentTarget.style.color = brainstormActive || brainstormOpen ? "var(--accent)" : "var(--text-muted)";
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
+                <line x1="7" y1="18" x2="12" y2="18" />
+                <line x1="8" y1="21" x2="11" y2="21" />
+              </svg>
+              {!isMobile && <span>{brainstormActive ? t("brainstorm.brainstorming") : t("brainstorm.title")}</span>}
             </button>
             {/* Model selector — visible always, disabled during streaming */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
