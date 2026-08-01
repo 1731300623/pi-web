@@ -9,6 +9,7 @@ import {
 } from "@/lib/file-fuzzy";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { t } from "@/lib/i18n";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -58,6 +59,8 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
+  /** Whether the pi-brainstorm extension's read-only brainstorm mode is currently active */
+  brainstormActive?: boolean;
 }
 
 export interface ChatInputHandle {
@@ -80,14 +83,14 @@ function compareModelOptions(a: ModelOption, b: ModelOption): number {
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const THINKING_LEVEL_DESC: Record<typeof THINKING_LEVELS[number], string> = {
-  auto: "Use pi default",
-  off: "Reasoning off",
-  minimal: "Minimal reasoning",
-  low: "Low reasoning",
-  medium: "Medium reasoning",
-  high: "High reasoning",
-  xhigh: "Extra-high reasoning",
-  max: "Max reasoning",
+  auto: t("Use pi default"),
+  off: t("Reasoning off"),
+  minimal: t("Minimal reasoning"),
+  low: t("Low reasoning"),
+  medium: t("Medium reasoning"),
+  high: t("High reasoning"),
+  xhigh: t("Extra-high reasoning"),
+  max: t("Max reasoning"),
 };
 
 function formatTokenCount(tokens: number): string {
@@ -105,20 +108,20 @@ type SlashCommandPaletteItem = SlashCommandInfo | {
 type SlashCommandSource = SlashCommandPaletteItem["source"];
 
 const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
-  { name: "compact", description: "Compress context, optionally with instructions", source: "builtin" },
-  { name: "reload", description: "Reload extensions, skills, prompts, and tools", source: "builtin" },
-  { name: "name", description: "Set the session display name", source: "builtin" },
-  { name: "session", description: "Show session message, token, and cost stats", source: "builtin" },
-  { name: "copy", description: "Copy the last assistant message", source: "builtin" },
+  { name: "compact", description: t("Compress context, optionally with instructions"), source: "builtin" },
+  { name: "reload", description: t("Reload extensions, skills, prompts, and tools"), source: "builtin" },
+  { name: "name", description: t("Set the session display name"), source: "builtin" },
+  { name: "session", description: t("Show session message, token, and cost stats"), source: "builtin" },
+  { name: "copy", description: t("Copy the last assistant message"), source: "builtin" },
 ];
 
 const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
 
 const SLASH_SOURCE_GROUP_LABEL: Record<SlashCommandSource, string> = {
-  builtin: "Built-in",
-  extension: "Extensions",
-  prompt: "Prompts",
-  skill: "Skills",
+  builtin: t("Built-in"),
+  extension: t("Extensions"),
+  prompt: t("Prompts"),
+  skill: t("Skills"),
 };
 
 const SLASH_SOURCE_ORDER: Record<SlashCommandSource, number> = {
@@ -198,6 +201,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
+  brainstormActive,
 }: Props, ref) {
   const isMobile = useIsMobile();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
@@ -209,6 +213,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? getDraft(draftKey)?.images.map(draftImageToAttachedImage) ?? [] : []
   ));
+  const [brainstormOpen, setBrainstormOpen] = useState(false);
+  const [brainstormTopic, setBrainstormTopic] = useState("");
   const trimmedValue = value.trimStart();
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
@@ -408,6 +414,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clearInput();
   }, [value, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
+  const startBrainstorm = useCallback(() => {
+    const topic = brainstormTopic.trim();
+    if (!topic || isStreaming) return;
+    // Triggers the pi-brainstorm extension: read-only mode, only the read
+    // tool stays enabled. Finish with /brainstorm finish, discard with cancel.
+    onSend(`/brainstorm ${topic}`);
+    setBrainstormTopic("");
+    setBrainstormOpen(false);
+  }, [brainstormTopic, isStreaming, onSend]);
+
+  const finishBrainstorm = useCallback(() => {
+    if (isStreaming) return;
+    // Ends brainstorm mode: generates a decision brief, lets the user review
+    // it in an editor, then offers to save it as markdown / replace context.
+    onSend("/brainstorm finish");
+    setBrainstormOpen(false);
+  }, [isStreaming, onSend]);
+
+  const cancelBrainstorm = useCallback(() => {
+    if (isStreaming) return;
+    onSend("/brainstorm cancel");
+    setBrainstormOpen(false);
+  }, [isStreaming, onSend]);
+
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
     : null;
@@ -443,8 +473,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   })();
 
   const slashCommandCountLabel = filteredSlashCommands.length === 1
-    ? (slashQuery ? "1 match" : "1 command")
-    : `${filteredSlashCommands.length} ${slashQuery ? "matches" : "commands"}`;
+    ? (slashQuery ? t("1 match") : t("1 command"))
+    : `${filteredSlashCommands.length} ${slashQuery ? t("matches") : t("commands")}`;
+
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText && attachedImages.length === 0;
 
@@ -832,7 +863,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : 0;
   const compactVerb = compactResult?.reason && compactResult.reason !== "manual"
     ? `${compactResult.reason[0].toUpperCase()}${compactResult.reason.slice(1)} compacted`
-    : "Compacted";
+    : t("Compacted");
   const compactResultText = compactResult
     ? `${compactVerb} ${formatTokenCount(compactResult.tokensBefore)} -> ${formatTokenCount(compactResult.estimatedTokensAfter)} tokens (${formatTokenCount(compactSavedTokens)} saved)`
     : null;
@@ -924,7 +955,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {onRecallQueue && (
                 <button
                   onClick={onRecallQueue}
-                  title="Remove all queued messages and put them back into the input box for editing"
+                  title={t("Remove all queued messages and put them back into the input box for editing")}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -952,7 +983,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <polyline points="9 14 4 9 9 4" />
                     <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                   </svg>
-                  Recall to input
+                  {t("Recall to input")}
                 </button>
               )}
             </div>
@@ -1052,13 +1083,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   color: "var(--text-dim)",
                 }}
               >
-                <span>{slashCommandsLoading ? "Loading commands..." : `Slash commands · ${slashCommandCountLabel}`}</span>
-                <span style={{ fontFamily: "var(--font-mono)" }}>Tab / Enter</span>
+                <span>{slashCommandsLoading ? t("Loading commands...") : `${t("Slash commands")} · ${slashCommandCountLabel}`}</span>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{t("Tab / Enter")}</span>
               </div>
               <div style={{ maxHeight: "calc(min(56vh, 460px) - 34px)", overflowY: "auto", padding: 10 }}>
                 {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
                   <div style={{ padding: "2px 2px 4px", fontSize: 12, color: "var(--text-dim)" }}>
-                    No extension, prompt, or skill commands found
+                    {t("No extension, prompt, or skill commands found")}
                   </div>
                 ) : (
                   groupedSlashCommands.map((group) => (
@@ -1191,15 +1222,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 >
                   <span>
                     {indexLoading
-                      ? "Loading files..."
+                      ? t("Loading files...")
                       : `Files · ${matchCountLabel}${truncatedHint}`}
                   </span>
-                  <span style={{ fontFamily: "var(--font-mono)" }}>Tab / Enter</span>
+                  <span style={{ fontFamily: "var(--font-mono)" }}>{t("Tab / Enter")}</span>
                 </div>
                 <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
                   {!indexLoading && atMatches.length === 0 ? (
                     <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>
-                      {needsServerSearch && !serverResultInUse ? "Searching…" : "No matching files"}
+                      {needsServerSearch && !serverResultInUse ? t("Searching…") : t("No matching files")}
                     </div>
                   ) : (
                     atMatches.map((entry, index) => {
@@ -1290,9 +1321,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             onPaste={handlePaste}
             placeholder={
               isStreaming && (onSteer || onFollowUp)
-                ? "Steer now / queue follow-up..."
-                : isStreaming ? "Agent is running…"
-                : "Message… Type / for commands, @ for files"
+                ? t("Steer now / queue follow-up...")
+                : isStreaming ? t("Agent is running…")
+                : t("Message… Type / for commands, @ for files")
             }
             rows={1}
             style={{
@@ -1317,7 +1348,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <button
                   onClick={() => sendQueued("steer")}
                   disabled={!canQueueStreamingMessage}
-                  title={attachedImages.length ? "Image attachments cannot be queued while the agent is running" : "Interrupt the current run and inject this message now"}
+                  title={attachedImages.length ? t("Image attachments cannot be queued while the agent is running") : t("Interrupt the current run and inject this message now")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
@@ -1333,14 +1364,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M5 1 L9 5 L5 9" /><line x1="1" y1="5" x2="9" y2="5" />
                   </svg>
-                  Steer
+                  {t("Steer")}
                 </button>
               )}
               {onFollowUp && (
                 <button
                   onClick={() => sendQueued("followup")}
                   disabled={!canQueueStreamingMessage}
-                  title={attachedImages.length ? "Image attachments cannot be queued while the agent is running" : "Queue this message after the agent finishes"}
+                  title={attachedImages.length ? t("Image attachments cannot be queued while the agent is running") : t("Queue this message after the agent finishes")}
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
@@ -1357,7 +1388,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="5" y1="1" x2="5" y2="6" /><polyline points="2.5 3.5 5 1 7.5 3.5" />
                     <line x1="2" y1="9" x2="8" y2="9" />
                   </svg>
-                  Follow-up
+                  {t("Follow-up")}
                 </button>
               )}
             </div>
@@ -1386,7 +1417,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <line x1="2" y1="7" x2="11" y2="7" />
                 <polyline points="7.5 3 12 7 7.5 11" />
               </svg>
-              Send
+              {t("Send")}
             </button>
           )}
           </div>
@@ -1396,6 +1427,180 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {bashMode && (
           <div className="text-xs px-2 py-1" style={{ color: bashExcluded ? "var(--text-muted)" : "var(--accent)", marginTop: 4 }}>
             Shell · {bashExcluded ? "output stays local" : "output sent to model"}
+          </div>
+        )}
+
+        {/* Brainstorm panel */}
+        {brainstormOpen && (
+          <div
+            style={{
+              marginTop: 8,
+              border: "1px solid color-mix(in srgb, var(--accent) 38%, var(--border))",
+              borderRadius: 10,
+              background: "var(--bg-panel)",
+              padding: "10px 12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, minWidth: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={brainstormActive ? "var(--accent)" : "var(--accent)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
+                <line x1="7" y1="18" x2="12" y2="18" />
+                <line x1="8" y1="21" x2="11" y2="21" />
+              </svg>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>
+                {brainstormActive ? t("Brainstorm mode is active") : t("Brainstorm")}
+              </span>
+              <span style={{ fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {brainstormActive ? t("Read-only — ending produces a decision brief") : t("Read-only mode, freely discuss a topic")}
+              </span>
+            </div>
+            {brainstormActive ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  onClick={finishBrainstorm}
+                  disabled={isStreaming}
+                  title={t("End brainstorm mode and generate a decision brief")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 12px",
+                    background: isStreaming ? "var(--bg-hover)" : "rgba(16,185,129,0.12)",
+                    border: "1px solid rgba(16,185,129,0.4)",
+                    borderRadius: 8,
+                    color: isStreaming ? "var(--text-dim)" : "rgba(5,150,105,1)",
+                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    fontSize: 12.5, fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s",
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  {t("End and summarize")}
+                </button>
+                <button
+                  onClick={cancelBrainstorm}
+                  disabled={isStreaming}
+                  title={t("Discard the brainstorm without a summary")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 12px",
+                    background: isStreaming ? "var(--bg-hover)" : "none",
+                    border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
+                    borderRadius: 8,
+                    color: isStreaming ? "var(--text-dim)" : "var(--text-muted)",
+                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    fontSize: 12.5, fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s",
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  {t("Cancel and discard")}
+                </button>
+                <span style={{ fontSize: 11, color: "var(--text-dim)", flex: 1, minWidth: 0 }}>
+                  {t("Chat freely — file edits and shell commands are blocked until you end the session")}
+                </span>
+                <button
+                  onClick={() => setBrainstormOpen(false)}
+                  title={t("Continue discussing")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 12px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 8,
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 12.5, fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                >
+                  {t("Continue discussing")}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  autoFocus
+                  value={brainstormTopic}
+                  onChange={(e) => setBrainstormTopic(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      startBrainstorm();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setBrainstormOpen(false);
+                      setBrainstormTopic("");
+                    }
+                  }}
+                  placeholder={t("Enter a topic, e.g. a product idea for indie developers")}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    background: "var(--bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "7px 10px",
+                    color: "var(--text)",
+                    fontSize: 13,
+                    outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <button
+                  onClick={startBrainstorm}
+                  disabled={!brainstormTopic.trim() || isStreaming}
+                  title={t("Start brainstorm")}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "7px 12px",
+                    background: brainstormTopic.trim() && !isStreaming ? "var(--accent)" : "var(--bg-hover)",
+                    border: "none",
+                    borderRadius: 8,
+                    color: brainstormTopic.trim() && !isStreaming ? "#fff" : "var(--text-dim)",
+                    cursor: brainstormTopic.trim() && !isStreaming ? "pointer" : "not-allowed",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    transition: "background 0.12s",
+                  }}
+                >
+                  {t("Start brainstorm")}
+                </button>
+                <button
+                  onClick={() => {
+                    setBrainstormOpen(false);
+                    setBrainstormTopic("");
+                  }}
+                  title={t("Cancel")}
+                  aria-label={t("Cancel")}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 32, height: 32, padding: 0,
+                    background: "none", border: "none", borderRadius: 8,
+                    color: "var(--text-muted)", cursor: "pointer",
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1413,7 +1618,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming}
-              title="Attach image"
+              title={t("Attach image")}
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
                 width: 32, height: 32, padding: 0,
@@ -1439,6 +1644,52 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
               </svg>
+            </button>
+            {/* Brainstorm toggle */}
+            <button
+              onClick={() => setBrainstormOpen((v) => !v)}
+              disabled={isStreaming}
+              title={brainstormActive
+                ? t("Brainstorm mode is active — click to end and summarize")
+                : t("Brainstorm a topic in read-only mode")}
+              aria-label={t("Brainstorm")}
+              aria-expanded={brainstormOpen}
+              style={{
+                flexShrink: 0,
+                display: "flex", alignItems: "center", gap: 5,
+                height: 32,
+                padding: isMobile ? "0 8px" : "0 10px",
+                background: brainstormActive || brainstormOpen
+                  ? "color-mix(in srgb, var(--accent) 14%, transparent)"
+                  : "none",
+                border: brainstormActive ? "1px solid color-mix(in srgb, var(--accent) 45%, transparent)" : "none",
+                borderRadius: 9,
+                color: brainstormActive || brainstormOpen ? "var(--accent)" : "var(--text-muted)",
+                cursor: isStreaming ? "not-allowed" : "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                opacity: isStreaming ? 0.5 : 1,
+                whiteSpace: "nowrap",
+                transition: "background 0.12s, color 0.12s, border-color 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                if (isStreaming) return;
+                e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 20%, transparent)";
+                e.currentTarget.style.color = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = brainstormActive || brainstormOpen
+                  ? "color-mix(in srgb, var(--accent) 14%, transparent)"
+                  : "none";
+                e.currentTarget.style.color = brainstormActive || brainstormOpen ? "var(--accent)" : "var(--text-muted)";
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
+                <line x1="7" y1="18" x2="12" y2="18" />
+                <line x1="8" y1="21" x2="11" y2="21" />
+              </svg>
+              {!isMobile && <span>{brainstormActive ? t("Brainstorming") : t("Brainstorm")}</span>}
             </button>
             {/* Model selector — visible always, disabled during streaming */}
             {modelOptions.length > 0 && currentName && onModelChange && (
@@ -1567,8 +1818,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {isMobile && (
               <button
                 type="button"
-                title={controlsMenuOpen ? undefined : "More controls"}
-                aria-label="More controls"
+                title={controlsMenuOpen ? undefined : t("More controls")}
+                aria-label={t("More controls")}
                 aria-expanded={controlsMenuOpen}
                 aria-hidden={controlsMenuOpen || undefined}
                 tabIndex={controlsMenuOpen ? -1 : undefined}
@@ -1605,7 +1856,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   e.currentTarget.style.color = "var(--text-muted)";
                 }}
               >
-                More
+                {t("More")}
               </button>
             )}
             <div style={{
@@ -1634,8 +1885,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <button
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
                   disabled={isStreaming}
-                  title={`Change reasoning level: ${thinkingDisplayLabel}`}
-                  aria-label="Change reasoning level"
+                  title={`${t("Change reasoning level:")} ${thinkingDisplayLabel}`}
+                  aria-label={t("Change reasoning level")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                     padding: isMobile ? "0 6px" : "8px 12px",
@@ -1721,8 +1972,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <button
                   onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
                   disabled={isStreaming}
-                  title={`Change tool preset: ${toolPresetLabel}`}
-                  aria-label="Change tool preset"
+                  title={`${t("Change tool preset:")} ${toolPresetLabel}`}
+                  aria-label={t("Change tool preset")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                     padding: isMobile ? "0 6px" : "8px 12px",
@@ -1762,7 +2013,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
                       const isActive = (toolPreset ?? "default") === preset;
-                      const desc = lvl === "off" ? "No tools, read-only" : lvl === "default" ? "4 built-in tools" : "All built-in tools";
+                      const desc = lvl === "off" ? t("No tools, read-only") : lvl === "default" ? t("4 built-in tools") : t("All built-in tools");
                       return (
                         <button
                           key={lvl}
@@ -1831,16 +2082,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.08)" : "none";
                     e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text-muted)";
                   }}
-                  title={isCompacting ? "Stop compaction" : "Compact context"}
-                  aria-label={isCompacting ? "Stop compaction" : "Compact context"}
+                  title={isCompacting ? t("Stop compaction") : t("Compact context")}
+                  aria-label={isCompacting ? t("Stop compaction") : t("Compact context")}
                 >
                   {isCompacting ? (
-                    <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>Compacting…</span>}</>
+                    <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{t("Compacting…")}</span>}</>
                   ) : (
                     <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
                       <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
-                    </svg>{(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>Compact</span>}</>
+                    </svg>{(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{t("Compact")}</span>}</>
                   )}
                 </button>
               </div>
@@ -1849,7 +2100,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {isStreaming && (
               <button
                 onClick={onAbort}
-                title="Stop agent"
+                title={t("Stop agent")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
                   padding: "8px 14px",
@@ -1869,15 +2120,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                   <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
                 </svg>
-                Stop
+                {t("Stop")}
               </button>
             )}
 
             {onSoundToggle !== undefined && (
               <button
                 onClick={onSoundToggle}
-                title={soundEnabled ? "Disable completion sound" : "Enable completion sound"}
-                aria-label={soundEnabled ? "Disable completion sound" : "Enable completion sound"}
+                title={soundEnabled ? t("Disable completion sound") : t("Enable completion sound")}
+                aria-label={soundEnabled ? t("Disable completion sound") : t("Enable completion sound")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                   width: isMobile ? 32 : 32,
@@ -1920,8 +2171,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {isMobile && controlsMenuOpen && (
               <button
                 type="button"
-                title="Collapse controls"
-                aria-label="Collapse controls"
+                title={t("Collapse controls")}
+                aria-label={t("Collapse controls")}
                 aria-expanded={true}
                 onClick={() => {
                   setToolDropdownOpen(false);

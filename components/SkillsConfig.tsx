@@ -8,6 +8,7 @@ import type {
   SkillSearchResult,
   SkillUpdateResult,
 } from "@/lib/api-types";
+import { t } from "@/lib/i18n";
 
 function shortenPath(p: string): string {
   // Match common home dir patterns: /Users/xxx, /home/xxx
@@ -47,8 +48,8 @@ function Toggle({
       disabled={loading}
       title={
         enabled
-          ? "Visible in model prompt — click to disable"
-          : "Hidden from model prompt — click to enable"
+          ? t("Visible in model prompt — click to disable")
+          : t("Hidden from model prompt — click to enable")
       }
       style={{
         flexShrink: 0,
@@ -167,7 +168,7 @@ function SkillDetail({
           <span
             style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
           >
-            Source
+            {t("Source")}
           </span>
           <a
             href={skill.install.skillsShUrl}
@@ -204,7 +205,7 @@ function SkillDetail({
           <span
             style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
           >
-            Version
+            {t("Version")}
           </span>
           <div
             style={{
@@ -238,7 +239,7 @@ function SkillDetail({
                   fontSize: 11,
                 }}
               >
-                Check
+                {t("Check")}
               </button>
             )}
             {updateStatus?.state === "update-available" && (
@@ -267,12 +268,12 @@ function SkillDetail({
                 }}
               >
                 {checkingUpdate
-                  ? "Checking..."
+                  ? t("Checking...")
                   : updateStatus?.state === "up-to-date"
-                    ? "Up to date"
+                    ? t("Up to date")
                     : updateStatus?.state === "unsupported"
-                        ? "Automatic checks unavailable"
-                        : updateStatus?.message || "Check failed"}
+                        ? t("Automatic checks unavailable")
+                        : updateStatus?.message || t("Check failed")}
               </span>
             )}
             {updateStatus?.state === "update-available" && (
@@ -291,7 +292,7 @@ function SkillDetail({
                   fontWeight: 600,
                 }}
               >
-                {updating ? "Updating..." : "Update"}
+                {updating ? t("Updating...") : t("Update")}
               </button>
             )}
           </div>
@@ -305,7 +306,7 @@ function SkillDetail({
         <span
           style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
         >
-          Name
+          {t("Name")}
         </span>
         <span
           style={{
@@ -322,7 +323,7 @@ function SkillDetail({
         <span
           style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
         >
-          Description
+          {t("Description")}
         </span>
         <span
           style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6 }}
@@ -379,7 +380,7 @@ function AddSkillPanel({
         return;
       }
       setResults(d.results ?? []);
-      if ((d.results ?? []).length === 0) setSearchError("No skills found");
+      if ((d.results ?? []).length === 0) setSearchError(t("No skills found"));
     } catch (e) {
       setSearchError(String(e));
     } finally {
@@ -432,7 +433,7 @@ function AddSkillPanel({
         }}
       >
         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
-          Add Skill
+          {t("Add Skill")}
         </div>
 
         {/* Search row */}
@@ -444,7 +445,7 @@ function AddSkillPanel({
             onKeyDown={(e) => {
               if (e.key === "Enter") search(query);
             }}
-            placeholder="e.g. react, testing, deploy"
+            placeholder={t("e.g. react, testing, deploy")}
             style={{
               flex: 1,
               padding: "7px 10px",
@@ -471,7 +472,7 @@ function AddSkillPanel({
               flexShrink: 0,
             }}
           >
-            {searching ? "Searching…" : "Search"}
+            {searching ? t("Searching…") : t("Search")}
           </button>
         </div>
 
@@ -637,10 +638,10 @@ function AddSkillPanel({
                   }}
                 >
                   {isInstalled
-                    ? "✓ Installed"
+                    ? t("✓ Installed")
                     : isInstalling
-                      ? "Installing…"
-                      : "Install"}
+                      ? t("Installing…")
+                      : t("Install")}
                 </button>
               </div>
             );
@@ -652,7 +653,7 @@ function AddSkillPanel({
           <div
             style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.8 }}
           >
-            Search{" "}
+            {t("Search")}{" "}
             <a
               href="https://skills.sh"
               target="_blank"
@@ -661,7 +662,7 @@ function AddSkillPanel({
             >
               skills.sh
             </a>{" "}
-            to discover and install skills for your agent.
+            {t("to discover and install skills for your agent.")}
           </div>
         )
       )}
@@ -886,7 +887,7 @@ export function SkillsConfig({
             <span
               style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}
             >
-              Skills
+              {t("Skills")}
             </span>
             <code
               style={{
@@ -942,7 +943,7 @@ export function SkillsConfig({
                     color: "var(--text-muted)",
                   }}
                 >
-                  Loading…
+                  {t("Loading…")}
                 </div>
               ) : error ? (
                 <div
@@ -962,14 +963,14 @@ export function SkillsConfig({
                     color: "var(--text-dim)",
                   }}
                 >
-                  No skills found
+                  {t("No skills found")}
                 </div>
               ) : (
                 (() => {
                   const groups: { label: string; skills: typeof skills }[] = [];
                   const groupDefinitions = [
                     {
-                      label: "project / skills.sh",
+                      label: t("project / skills.sh"),
                       matches: (skill: Skill) =>
                         sourceLabel(skill) === "project" &&
                         Boolean(skill.install?.skillsShUrl),
@@ -981,7 +982,7 @@ export function SkillsConfig({
                         !skill.install?.skillsShUrl,
                     },
                     {
-                      label: "global / skills.sh",
+                      label: t("global / skills.sh"),
                       matches: (skill: Skill) =>
                         sourceLabel(skill) === "global" &&
                         Boolean(skill.install?.skillsShUrl),
@@ -1087,7 +1088,7 @@ export function SkillsConfig({
                                 if (status?.state !== "update-available") return null;
                                 return (
                                   <span
-                                    title="Update available"
+                                    title={t("Update available")}
                                     style={{
                                       color: "#d97706",
                                       fontSize: 13,
@@ -1150,7 +1151,7 @@ export function SkillsConfig({
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                Add skill
+                {t("Add skill")}
               </div>
             </div>
           </div>
@@ -1210,7 +1211,7 @@ export function SkillsConfig({
                   fontSize: 13,
                 }}
               >
-                Select a skill
+                {t("Select a skill")}
               </div>
             )}
           </div>
@@ -1246,7 +1247,7 @@ export function SkillsConfig({
                   fontSize: 12,
                 }}
               >
-                {checkingAll ? "Checking..." : "Check updates"}
+                {checkingAll ? t("Checking...") : t("Check updates")}
               </button>
             )}
             {Object.values(updateStatuses).filter(
@@ -1278,7 +1279,7 @@ export function SkillsConfig({
               fontSize: 13,
             }}
           >
-            Close
+            {t("Close")}
           </button>
         </div>
       </div>

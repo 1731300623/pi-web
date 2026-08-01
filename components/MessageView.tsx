@@ -19,6 +19,7 @@ import type {
   ToolCallContent,
   ThinkingContent,
 } from "@/lib/types";
+import { t } from "@/lib/i18n";
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
 const thinkingContentCache = new Map<string, Promise<string>>();
@@ -37,7 +38,7 @@ function loadThinkingContent(sessionId: string, entryId: string, blockIndex: num
   ).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json() as { thinking?: unknown };
-    if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
+    if (typeof data.thinking !== "string") throw new Error(t("Invalid thinking response"));
     return data.thinking;
   }).catch((error) => {
     thinkingContentCache.delete(key);
@@ -239,7 +240,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           }}>
             <button
               onClick={copyContent}
-              title="Copy message"
+              title={t("Copy message")}
               style={{
                 display: "flex", alignItems: "center", gap: 4,
                 padding: "3px 8px", height: 22,
@@ -264,7 +265,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
               )}
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("Copied") : t("Copy")}
             </button>
           </div>
           {(canFork || canNavigate) && (
@@ -277,7 +278,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               {canNavigate && (
                 <button
                   onClick={() => { onNavigate!(prevAssistantEntryId!); onEditContent?.(content); }}
-                  title="Edit from here — branches within this session"
+                  title={t("Edit from here — branches within this session")}
                   style={{
                     display: "flex", alignItems: "center", gap: 4,
                     padding: "3px 8px", height: 22,
@@ -296,14 +297,14 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     <polyline points="15 10 20 15 15 20" />
                     <path d="M4 4v7a4 4 0 0 0 4 4h12" />
                   </svg>
-                  Edit from here
+                  {t("Edit from here")}
                 </button>
               )}
               {canFork && (
                 <button
                   onClick={() => { onFork!(entryId!); }}
                   disabled={forking}
-                  title={forking ? "Creating new session…" : "New session — creates an independent copy from here"}
+                  title={forking ? t("Creating new session…") : t("New session — creates an independent copy from here")}
                   style={{
                     display: "flex", alignItems: "center", gap: 4,
                     padding: "3px 8px", height: 22,
@@ -324,7 +325,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     <circle cx="6" cy="18" r="3" />
                     <path d="M18 9a9 9 0 0 1-9 9" />
                   </svg>
-                  {forking ? "Creating…" : "New session"}
+                  {forking ? t("Creating…") : t("New session")}
                 </button>
               )}
             </div>
@@ -501,7 +502,7 @@ function AssistantMessageView({
             <>
 
               {est > 0 && (
-                <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }} title="Estimated token count while streaming">
+                <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }} title={t("Estimated token count while streaming")}>
                   <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 11, fontWeight: 400 }}>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
@@ -540,7 +541,7 @@ function AssistantMessageView({
         {textContent && !isStreaming && (
           <button
             onClick={copyContent}
-            title="Copy message"
+            title={t("Copy message")}
             style={{
               display: "flex", alignItems: "center", gap: 4,
               padding: "3px 8px", height: 22,
@@ -567,7 +568,7 @@ function AssistantMessageView({
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             )}
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
         )}
         {time && !isStreaming && (
@@ -615,7 +616,7 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
     setExpanded(nextExpanded);
     if (!nextExpanded || !block.deferred || content !== null) return;
     if (!sessionId || !entryId) {
-      setError("Thinking content unavailable");
+      setError(t("Thinking content unavailable"));
       return;
     }
 
@@ -655,7 +656,7 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
           textAlign: "left",
         }}
       >
-        <span>Thinking</span>
+        <span>{t("Thinking")}</span>
         {duration !== undefined && (
           <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}
@@ -672,7 +673,7 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
             borderTop: "1px solid var(--border)",
           }}
         >
-          {loading ? "Loading thinking..." : error ?? (block.deferred ? content : block.thinking)}
+          {loading ? t("Loading thinking...") : error ?? (block.deferred ? content : block.thinking)}
         </div>
       )}
     </div>
@@ -822,8 +823,8 @@ function SplitPatchView({ text }: { text: string }) {
                 borderBottom: "1px solid var(--border)",
               }}
             >
-              <SplitDiffHeader title={file.oldPath || "Before"} side="left" />
-              <SplitDiffHeader title={file.newPath || "After"} side="right" />
+              <SplitDiffHeader title={file.oldPath || t("Before")} side="left" />
+              <SplitDiffHeader title={file.newPath || t("After")} side="right" />
             </div>
           )}
 
@@ -1086,7 +1087,7 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
 
         <div style={{ padding: "11px 13px 12px" }}>
           <div style={{ color: "var(--text)", fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>
-            Conversation compacted
+            {t("Conversation compacted")}
           </div>
           <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: 14, lineHeight: 1.5 }}>
             The conversation history before this point was compacted into the following summary:
@@ -1094,7 +1095,7 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
           {parsedSummary.body ? (
             <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
           ) : (
-            <span style={{ color: "var(--text-dim)", fontSize: 12 }}>(no summary)</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("(no summary)")}</span>
           )}
           <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
         </div>
@@ -1114,8 +1115,8 @@ function CompactionFileMetadata({ readFiles, modifiedFiles }: { readFiles: strin
   return (
     <details className="compaction-file-details">
       <summary>File context: {parts.join(", ")}</summary>
-      {modifiedFiles.length > 0 && <CompactionFileList title="Modified files" files={modifiedFiles} />}
-      {readFiles.length > 0 && <CompactionFileList title="Read files" files={readFiles} />}
+      {modifiedFiles.length > 0 && <CompactionFileList title={t("Modified files")} files={modifiedFiles} />}
+      {readFiles.length > 0 && <CompactionFileList title={t("Read files")} files={readFiles} />}
     </details>
   );
 }
@@ -1178,7 +1179,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
             {title}
           </span>
-          {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>hidden extension message</span>}
+          {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("hidden extension message")}</span>}
           {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
         </div>
 
@@ -1201,7 +1202,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 })}
               </div>
             )}
-            {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: 12 }}>(no message)</span>}
+            {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("(no message)")}</span>}
           </div>
         ) : (
           <button
@@ -1218,7 +1219,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               textAlign: "left",
             }}
           >
-            {text ? previewText(text) : "Show extension message"}
+            {text ? previewText(text) : t("Show extension message")}
           </button>
         )}
 
@@ -1244,7 +1245,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 fontSize: 11,
               }}
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("Copied") : t("Copy")}
             </button>
           ) : null}
           {(hasDetails || isHiddenDisplay) && (
@@ -1264,8 +1265,8 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               }}
             >
               {isHiddenDisplay
-                ? (contentExpanded ? "Collapse" : "Expand")
-                : (detailsExpanded ? "Hide details" : "Show details")}
+                ? (contentExpanded ? t("Collapse") : t("Expand"))
+                : (detailsExpanded ? t("Hide details") : t("Show details"))}
             </button>
           )}
         </div>
@@ -1332,7 +1333,7 @@ function formatCustomType(type: string): string {
 
 function previewText(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) return "Show extension message";
+  if (!normalized) return t("Show extension message");
   return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
 }
 
@@ -1404,7 +1405,7 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
   // Reuse the existing ToolCallBlock so user-run bash looks identical to an
   // agent-run bash tool call: same header, collapse behavior, result pane.
   // Synthesize an equivalent ToolCallContent + ToolResultMessage pair.
-  const toolName = message.excludeFromContext ? "bash (local)" : "bash";
+  const toolName = message.excludeFromContext ? t("bash (local)") : "bash";
   const block: ToolCallContent = {
     type: "toolCall",
     toolCallId: `bash-${message.timestamp ?? ""}`,
@@ -1433,14 +1434,14 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
               disabled={loadingFull}
               style={{ background: "none", border: "none", color: "var(--accent)", cursor: loadingFull ? "default" : "pointer", fontSize: 11, padding: 0, textDecoration: "underline" }}
             >
-              {loadingFull ? "loading…" : "view full output"}
+              {loadingFull ? t("loading…") : t("view full output")}
             </button>
           )}
           <a
             href={`${fullOutputUrl}&download=1`}
             style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: 11, textDecoration: "underline" }}
           >
-            download full output
+            {t("download full output")}
           </a>
           {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: 11 }}>({fullError})</span>}
         </div>

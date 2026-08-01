@@ -9,6 +9,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { copyText } from "@/lib/clipboard";
 import { resolveLocalFileHref } from "@/lib/file-links";
 import { markdownRehypePlugins, markdownRemarkPlugins } from "@/lib/markdown";
+import { t } from "@/lib/i18n";
 
 interface MarkdownBodyProps {
   children: string;
@@ -145,7 +146,7 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
       });
 
       const parsed = await mermaid.parse(code, { suppressErrors: true });
-      if (!parsed) throw new Error("Invalid Mermaid diagram");
+      if (!parsed) throw new Error(t("Invalid Mermaid diagram"));
 
       const id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -171,10 +172,10 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
     <button
       onClick={() => setShowPreview((v) => !v)}
       disabled={isStreaming}
-      title={isStreaming ? "Preview available after streaming" : (showPreview ? "Show Mermaid source" : "Preview Mermaid diagram")}
+      title={isStreaming ? t("Preview available after streaming") : (showPreview ? t("Show Mermaid source") : t("Preview Mermaid diagram"))}
       className={["markdown-code-action", showPreview ? "is-active" : ""].filter(Boolean).join(" ")}
     >
-      {showPreview ? "Source" : "Preview"}
+      {showPreview ? t("Source") : t("Preview")}
     </button>
   );
 
@@ -184,9 +185,9 @@ function MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boole
 
   const body =
     failedKey === currentKey ? (
-      <div className="mermaid-block mermaid-block-error">Invalid Mermaid diagram</div>
+      <div className="mermaid-block mermaid-block-error">{t("Invalid Mermaid diagram")}</div>
     ) : !svg || renderedKey !== currentKey ? (
-      <div className="mermaid-block mermaid-block-loading" aria-label="Rendering Mermaid diagram" />
+      <div className="mermaid-block mermaid-block-loading" aria-label={t("Rendering Mermaid diagram")} />
     ) : (
       <div
         className="mermaid-block"

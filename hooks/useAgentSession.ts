@@ -13,6 +13,8 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { getToolNamesForPreset, type ToolEntry } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import { t } from "@/lib/i18n";
+import { localizeSlashCommands } from "@/lib/slash-command-i18n";
 
 export interface SessionData {
   sessionId: string;
@@ -177,8 +179,8 @@ type EventStreamConnectionResult = {
 class EventStreamConnectionError extends Error {
   constructor(public readonly status: Exclude<EventStreamConnectionStatus, "connected">) {
     super(status === "timeout"
-      ? "Timed out connecting to the agent event stream. Please try again."
-      : "Failed to connect to the agent event stream. Please try again.");
+      ? t("Timed out connecting to the agent event stream. Please try again.")
+      : t("Failed to connect to the agent event stream. Please try again."));
     this.name = "EventStreamConnectionError";
   }
 }
@@ -481,7 +483,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         return agentState;
       } catch (e) {
-        console.error("Failed to load agent state:", e);
+        console.error(t("Failed to load agent state:"), e);
         return null;
       }
     } catch (e) {
@@ -503,7 +505,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
     } catch (e) {
-      console.error("Failed to load context:", e);
+      console.error(t("Failed to load context:"), e);
     }
   }, []);
 
@@ -515,7 +517,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setToolPresetState(getPresetFromTools(tools));
       }
     } catch (e) {
-      console.error("Failed to load tools:", e);
+      console.error(t("Failed to load tools:"), e);
     }
   }, [setToolPresetState]);
 
@@ -579,11 +581,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setSlashCommandsLoading(true);
     try {
       const data = await sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
-      const commands = data?.commands ?? [];
+      const commands = localizeSlashCommands(data?.commands ?? []);
       setSlashCommands(commands);
       return commands;
     } catch (e) {
-      console.error("Failed to load slash commands:", e);
+      console.error(t("Failed to load slash commands:"), e);
       setSlashCommands([]);
       return [] as SlashCommandInfo[];
     } finally {
@@ -660,7 +662,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...response,
       });
     } catch (e) {
-      console.error("Failed to send extension UI response:", e);
+      console.error(t("Failed to send extension UI response:"), e);
     }
   }, []);
 
@@ -674,7 +676,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         data,
       });
     } catch (e) {
-      console.error("Failed to send extension custom UI input:", e);
+      console.error(t("Failed to send extension custom UI input:"), e);
     }
   }, []);
 
@@ -828,7 +830,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (promptRunIdRef.current !== runId) return;
       const state = data.state;
       // Mirror compaction state unconditionally: a missed compaction_end
-      // would otherwise leave the "Stop compaction" UI stuck. No state
+      // would otherwise leave the t("Stop compaction") UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
       setIsCompacting(state?.isCompacting ?? false);
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
@@ -914,12 +916,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         void finishPromptWithoutStream(sessionIdRef.current);
         break;
       case "prompt_error":
-        addNotice({ type: "error", message: (event.errorMessage as string | undefined) ?? "Command failed" });
+        addNotice({ type: "error", message: (event.errorMessage as string | undefined) ?? t("Command failed") });
         break;
       case "extension_error":
         addNotice({
           type: "error",
-          message: (event.error as string | undefined) ?? "Extension command failed",
+          message: (event.error as string | undefined) ?? t("Extension command failed"),
         });
         break;
       case "message_start":
@@ -1098,7 +1100,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         void waitForPromptSettlement(sentSessionId, promptRunId);
       }
     } catch (e) {
-      console.error("Failed to send message:", e);
+      console.error(t("Failed to send message:"), e);
       if (e instanceof EventStreamConnectionError) {
         const optimisticKey = optimisticUserMessageKeyRef.current;
         if (optimisticKey) {
@@ -1127,7 +1129,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setBashRunning(true);
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
-      if (!sid) throw new Error("Unable to create a session for the shell command");
+      if (!sid) throw new Error(t("Unable to create a session for the shell command"));
       await sendAgentCommand(sid, {
         type: "bash",
         command,
@@ -1136,7 +1138,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await loadSession(sid);
       promoteNewSession(1, inputText);
     } catch (e) {
-      console.error("Failed to execute shell command:", e);
+      console.error(t("Failed to execute shell command:"), e);
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
       opts.chatInputRef?.current?.insertIfEmpty(inputText);
     } finally {
@@ -1154,14 +1156,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       try {
         await sendAgentCommand(sid, { type: "abort_bash" });
       } catch (e) {
-        console.error("Failed to abort bash:", e);
+        console.error(t("Failed to abort bash:"), e);
       }
       return;
     }
     try {
       await sendAgentCommand(sid, { type: "abort" });
     } catch (e) {
-      console.error("Failed to abort:", e);
+      console.error(t("Failed to abort:"), e);
     }
   }, []);
 
@@ -1180,7 +1182,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         onSessionForked?.(newSessionId);
       }
     } catch (e) {
-      console.error("Fork failed:", e);
+      console.error(t("Fork failed:"), e);
     } finally {
       setForkingEntryId(null);
     }
@@ -1215,7 +1217,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       try {
         await sendAgentCommand(sid, { type: "set_model", provider, modelId });
       } catch (e) {
-        console.error("Failed to set model:", e);
+        console.error(t("Failed to set model:"), e);
       }
       return;
     }
@@ -1225,7 +1227,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await sendAgentCommand(sid, { type: "set_model", provider, modelId });
       setCurrentModelOverride({ provider, modelId });
     } catch (e) {
-      console.error("Failed to set model:", e);
+      console.error(t("Failed to set model:"), e);
     }
   }, [isNew, setNewSessionModel]);
 
@@ -1280,7 +1282,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (result.error) {
         addNotice({ type: "error", message: result.error });
       } else if (result.action !== "openSessionStats") {
-        addNotice({ type: "success", message: result.message ?? "Command completed" });
+        addNotice({ type: "success", message: result.message ?? t("Command completed") });
       }
       return result;
     };
@@ -1288,7 +1290,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       switch (commandName) {
         case "compact": {
-          if (!sid || isCompacting) return complete({ handled: true, error: "No active session to compact" });
+          if (!sid || isCompacting) return complete({ handled: true, error: t("No active session to compact") });
           setIsCompacting(true);
           setCompactError(null);
           setCompactResult(null);
@@ -1298,11 +1300,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           });
           setCompactResult(readCompactResult(result, "manual"));
           if (await loadSession(sid, true)) promoteNewSession();
-          return complete({ handled: true, message: "Compacted context" });
+          return complete({ handled: true, message: t("Compacted context") });
         }
 
         case "reload": {
-          if (!sid) return complete({ handled: true, error: "No active session to reload" });
+          if (!sid) return complete({ handled: true, error: t("No active session to reload") });
           await sendAgentCommand(sid, { type: "reload" });
           await Promise.all([
             loadSession(sid, false, true),
@@ -1310,11 +1312,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             loadSlashCommands(),
             loadModels(),
           ]);
-          return complete({ handled: true, message: "Reloaded session resources" });
+          return complete({ handled: true, message: t("Reloaded session resources") });
         }
 
         case "name": {
-          if (!sid) return complete({ handled: true, error: "No active session to name" });
+          if (!sid) return complete({ handled: true, error: t("No active session to name") });
           if (!args) return complete({ handled: true, error: "Usage: /name <name>" });
           await sendAgentCommand(sid, { type: "set_session_name", name: args });
           if (await loadSession(sid)) promoteNewSession();
@@ -1322,7 +1324,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         case "session": {
-          if (!sid) return complete({ handled: true, error: "No active session" });
+          if (!sid) return complete({ handled: true, error: t("No active session") });
           const stats = await sendAgentCommand<SessionStatsInfo>(sid, { type: "get_session_stats" });
           if (stats) {
             setSessionStatsOverride(stats);
@@ -1332,12 +1334,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         case "copy": {
-          if (!sid) return complete({ handled: true, error: "No active session" });
+          if (!sid) return complete({ handled: true, error: t("No active session") });
           const data = await sendAgentCommand<LastAssistantTextResponse>(sid, { type: "get_last_assistant_text" });
           const textToCopy = data?.text ?? "";
-          if (!textToCopy) return complete({ handled: true, error: "No assistant message to copy" });
+          if (!textToCopy) return complete({ handled: true, error: t("No assistant message to copy") });
           await navigator.clipboard.writeText(textToCopy);
-          return complete({ handled: true, message: "Copied last assistant message" });
+          return complete({ handled: true, message: t("Copied last assistant message") });
         }
 
         default:
@@ -1365,7 +1367,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
-      console.error("Failed to steer:", e);
+      console.error(t("Failed to steer:"), e);
     }
   }, []);
 
@@ -1385,7 +1387,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
-      console.error("Failed to queue prompt:", e);
+      console.error(t("Failed to queue prompt:"), e);
     }
   }, []);
 
@@ -1400,7 +1402,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
-      console.error("Failed to follow up:", e);
+      console.error(t("Failed to follow up:"), e);
     }
   }, []);
 
@@ -1410,7 +1412,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await sendAgentCommand(sid, { type: "abort_compaction" });
     } catch (e) {
-      console.error("Failed to abort compaction:", e);
+      console.error(t("Failed to abort compaction:"), e);
     }
   }, []);
 
@@ -1427,8 +1429,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         opts.chatInputRef?.current?.prependText(texts.join("\n\n"));
       }
     } catch (e) {
-      console.error("Failed to recall queued messages:", e);
-      addNotice({ type: "error", message: "Failed to recall queued messages" });
+      console.error(t("Failed to recall queued messages:"), e);
+      addNotice({ type: "error", message: t("Failed to recall queued messages") });
     }
   }, [opts.chatInputRef, addNotice]);
 
@@ -1440,7 +1442,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await sendAgentCommand(sid, { type: "set_thinking_level", level });
     } catch (e) {
-      console.error("Failed to set thinking level:", e);
+      console.error(t("Failed to set thinking level:"), e);
     }
   }, []);
 
@@ -1452,7 +1454,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await sendAgentCommand(sid, { type: "set_tools", toolNames });
     } catch (e) {
-      console.error("Failed to set tools:", e);
+      console.error(t("Failed to set tools:"), e);
     }
   }, [setToolPresetState]);
 

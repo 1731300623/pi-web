@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import type { SessionEntry, SessionTreeNode } from "@/lib/types";
+import { t } from "@/lib/i18n";
 
 interface Props {
   tree: SessionTreeNode[];
@@ -246,9 +247,9 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   }, [onLeafChange]);
 
   const noBranchReason = !hasSession
-    ? "No active session"
+    ? t("No active session")
     : !hasBranch(tree)
-      ? "This session has no branches"
+      ? t("This session has no branches")
       : null;
 
   // Find first meaningful node (skip pure linear prefix)
@@ -296,12 +297,12 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           }}
           onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = open ? "var(--text)" : "var(--text-muted)"; }}
-          title="Branches"
-          aria-label="Branches"
+          title={t("Branches")}
+          aria-label={t("Branches")}
           aria-pressed={open}
         >
           {branchIcon}
-          {!compact && <span>Branches</span>}
+          {!compact && <span>{t("Branches")}</span>}
         </button>
         {open && dropdownPos && (
           <div style={{
@@ -358,7 +359,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
         }}
       >
         {branchIcon}
-        <span style={{ color: "var(--text-muted)" }}>Branches</span>
+        <span style={{ color: "var(--text-muted)" }}>{t("Branches")}</span>
         {chevron}
       </button>
 
@@ -390,7 +391,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             </div>
           ) : (
             <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-              {noBranchReason ?? "This session has no branches"}
+              {noBranchReason ?? t("This session has no branches")}
             </div>
           )}
         </div>
