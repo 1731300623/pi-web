@@ -218,6 +218,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.attachImage": "附加图片",
     "chat.filterModels": "筛选模型…",
     "chat.noMatchingModels": "没有匹配的模型",
+    "chat.syncModels": "同步模型列表",
+    "chat.syncModelsFailed": "模型同步失败，请重试",
     "chat.moreControls": "更多控件",
     "chat.collapseControls": "收起控件",
     "chat.shell": "Shell",

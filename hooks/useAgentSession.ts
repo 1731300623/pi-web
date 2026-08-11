@@ -1460,9 +1460,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [isCompacting, loadSession]);
 
-  const loadModels = useCallback(async (signal?: AbortSignal) => {
+  const loadModels = useCallback(async (signal?: AbortSignal, force = false) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
-    const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
+    const baseUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
+    // `force` (used by the sync button in the change-model dropdown) asks the
+    // server to bypass its TTL cache and re-resolve models from disk.
+    const modelsUrl = force ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}refresh=1` : baseUrl;
     const res = await fetch(modelsUrl, signal ? { signal } : undefined);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const d = await res.json() as ModelsResponse;
@@ -1487,6 +1490,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     }
   }, [isNew, newSessionCwd, session?.cwd]);
+
+  // Force a re-fetch of the model list, bypassing the server-side TTL cache
+  // so models added/removed on disk appear immediately in the UI.
+  const refreshModels = useCallback(async () => {
+    await loadModels(undefined, true);
+  }, [loadModels]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (!text.startsWith("/")) return { handled: false };
@@ -1855,7 +1864,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages,
-    dispatch, setAgentRunning, setForkingEntryId,
+    dispatch, setAgentRunning, setForkingEntryId, refreshModels,
     bashRunning, pendingBash,
     // Subscriptions
     handleAgentEventRef,

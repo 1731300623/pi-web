@@ -44,6 +44,8 @@ interface Props {
   /** Diagnostics from resolving `enabledModels`, e.g. a pattern that matched nothing. */
   modelScopeWarnings?: string[];
   onModelChange?: (provider: string, modelId: string) => void;
+  /** Force re-fetch of the model list, bypassing the server-side TTL cache. */
+  onRefreshModels?: () => Promise<void>;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -315,6 +317,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange,
+  onRefreshModels,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
@@ -331,6 +334,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [modelFilter, setModelFilter] = useState("");
+  const [modelSyncing, setModelSyncing] = useState(false);
+  const [modelSyncError, setModelSyncError] = useState<string | null>(null);
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
@@ -1105,6 +1110,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return thinkingLevelMap[lvl] ?? lvl;
   })();
   const toolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default";
+
+  // Sync (force re-fetch) the model list from the server, bypassing the
+  // TTL cache, so models added/removed on disk show up immediately.
+  const handleSyncModels = useCallback(async () => {
+    if (!onRefreshModels || modelSyncing) return;
+    setModelSyncing(true);
+    setModelSyncError(null);
+    try {
+      await onRefreshModels();
+    } catch {
+      setModelSyncError(t("chat.syncModelsFailed"));
+    } finally {
+      setModelSyncing(false);
+    }
+  }, [onRefreshModels, modelSyncing, t]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -2128,6 +2148,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       }}>
                       {showModelFilter && (
                         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <input
                             value={modelFilter}
                             onChange={(e) => setModelFilter(e.target.value)}
@@ -2143,8 +2164,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             autoComplete="off"
                             spellCheck={false}
                             style={{
-                              width: "100%",
-                              minWidth: isMobile ? 0 : 220,
+                              flex: 1,
+                              minWidth: isMobile ? 0 : 180,
                               fontSize: 11,
                               fontFamily: "var(--font-mono)",
                               padding: "5px 8px",
@@ -2156,12 +2177,68 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               boxSizing: "border-box",
                             }}
                           />
+                          <button
+                            type="button"
+                            onClick={handleSyncModels}
+                            disabled={modelSyncing}
+                            title={t("chat.syncModels")}
+                            aria-label={t("chat.syncModels")}
+                            style={{
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              width: 24, height: 24, padding: 0, flexShrink: 0,
+                              border: "1px solid var(--border)", borderRadius: 5,
+                              background: "var(--bg)", color: "var(--text-muted)",
+                              cursor: modelSyncing ? "default" : "pointer",
+                              opacity: modelSyncing ? 0.6 : 1,
+                              transition: "color 0.12s, background 0.12s",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (modelSyncing) return;
+                              e.currentTarget.style.color = "var(--text)";
+                              e.currentTarget.style.background = "var(--bg-hover)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.color = "var(--text-muted)";
+                              e.currentTarget.style.background = "var(--bg)";
+                            }}
+                          >
+                            {modelSyncing
+                              ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+                              : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" /></svg>}
+                          </button>
+                          </div>
+                          {modelSyncError && (
+                            <div style={{ padding: "4px 2px 0", color: "rgb(239,68,68)", fontSize: 11 }} role="alert">
+                              {modelSyncError}
+                            </div>
+                          )}
                         </div>
                       )}
                       <div style={{ minHeight: 0, overflowY: "auto" }}>
                         {modelsByProvider.length === 0 ? (
-                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 12, whiteSpace: "nowrap" }}>
-                            {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
+                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ flex: 1 }}>
+                              {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleSyncModels}
+                              disabled={modelSyncing}
+                              title={t("chat.syncModels")}
+                              aria-label={t("chat.syncModels")}
+                              style={{
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                width: 22, height: 22, padding: 0, flexShrink: 0,
+                                border: "1px solid var(--border)", borderRadius: 5,
+                                background: "var(--bg)", color: "var(--text-muted)",
+                                cursor: modelSyncing ? "default" : "pointer",
+                                opacity: modelSyncing ? 0.6 : 1,
+                              }}
+                            >
+                              {modelSyncing
+                                ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+                                : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" /></svg>}
+                            </button>
                           </div>
                         ) : modelsByProvider.map((group, gi) => (
                           <div key={group.provider}>

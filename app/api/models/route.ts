@@ -2,7 +2,7 @@ import { stat } from "fs/promises";
 import { resolve } from "path";
 import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
+import { loadModelsWithCache, invalidateModelsCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { projectTrustReloadOptions } from "@/lib/project-trust";
@@ -93,8 +93,12 @@ const EMPTY_MODELS: ModelsData = {
 };
 
 export async function GET(req: Request) {
-  const requestedCwd = new URL(req.url).searchParams.get("cwd") || process.cwd();
+  const url = new URL(req.url);
+  const requestedCwd = url.searchParams.get("cwd") || process.cwd();
   const cwd = resolve(requestedCwd);
+  // `refresh=1` bypasses the TTL cache so model additions/removals show up
+  // immediately (used by the sync button in the change-model dropdown).
+  if (url.searchParams.get("refresh") === "1") invalidateModelsCache();
 
   let cwdStat;
   try {
